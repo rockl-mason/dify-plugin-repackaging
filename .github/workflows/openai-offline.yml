@@ -25,6 +25,7 @@ on:
 env:
   PLUGIN_AUTHOR: langgenius
   PLUGIN_NAME: openai
+  MARKETPLACE_API_URL: https://marketplace.dify.ai
 
 jobs:
   repackage:
@@ -59,6 +60,7 @@ jobs:
           echo "plugin_name    = ${{ env.PLUGIN_NAME }}"
           echo "plugin_version = ${{ env.PLUGIN_VERSION }}"
           echo "platform_arm   = ${{ env.PLATFORM_ARM }}"
+          echo "pip_platform   = ${{ env.PIP_PLATFORM }}"
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -68,33 +70,61 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Make plugin_repackaging.sh executable
-        run: chmod +x ./plugin_repackaging.sh
-
-      - name: Run plugin repackaging script
+      - name: Download original plugin package
         run: |
-          PIP_MIRROR_URL=https://pypi.org/simple \
-          ./plugin_repackaging.sh \
-          -p ${{ env.PIP_PLATFORM }} \
-          -s ${{ env.PACKAGE_SUFFIX }} \
-          market \
-          "${{ env.PLUGIN_AUTHOR }}" \
-          "${{ env.PLUGIN_NAME }}" \
-          "${{ env.PLUGIN_VERSION }}"
+          curl -L \
+            -o "${{ env.PLUGIN_AUTHOR }}-${{ env.PLUGIN_NAME }}_${{ env.PLUGIN_VERSION }}.difypkg" \
+            "${{ env.MARKETPLACE_API_URL }}/api/v1/plugins/${{ env.PLUGIN_AUTHOR }}/${{ env.PLUGIN_NAME }}/${{ env.PLUGIN_VERSION }}/download"
 
-      - name: Find repackaged artifact
+      - name: Unpack plugin package
         run: |
-          ARTIFACT_PATH=$(find . -type f -name "*-${PACKAGE_SUFFIX}.difypkg" | head -n 1)
-          if [ -z "$ARTIFACT_PATH" ]; then
-            echo "No *-${PACKAGE_SUFFIX}.difypkg artifact found!"
-            exit 1
+          unzip -o "${{ env.PLUGIN_AUTHOR }}-${{ env.PLUGIN_NAME }}_${{ env.PLUGIN_VERSION }}.difypkg" -d plugin-src
+          ls -la plugin-src | sed -n '1,80p'
+
+      - name: Download Python wheels
+        run: |
+          mkdir -p plugin-src/wheels
+          python -m pip download \
+            --dest plugin-src/wheels \
+            --index-url https://pypi.org/simple \
+            --only-binary=:all: \
+            --platform "${{ env.PIP_PLATFORM }}" \
+            --python-version 312 \
+            --implementation cp \
+            --abi cp312 \
+            -r plugin-src/requirements.txt
+
+      - name: Force requirements-based offline install
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          req = Path('plugin-src/requirements.txt')
+          content = req.read_text()
+          if '--no-index --find-links=./wheels/' not in content:
+              req.write_text('--no-index --find-links=./wheels/\n' + content)
+          PY
+          rm -f plugin-src/pyproject.toml plugin-src/uv.lock
+          if [ -f plugin-src/.difyignore ]; then
+            sed -i '/^wheels\//d' plugin-src/.difyignore
           fi
+          if [ -f plugin-src/.gitignore ]; then
+            sed -i '/^wheels\//d' plugin-src/.gitignore
+          fi
+          printf '\n--- plugin-src ---\n'
+          find plugin-src -maxdepth 2 | sort | sed -n '1,120p'
+          printf '\n--- requirements.txt ---\n'
+          sed -n '1,40p' plugin-src/requirements.txt
 
-          echo "ARTIFACT_PATH=$ARTIFACT_PATH" >> "$GITHUB_ENV"
-          echo "ARTIFACT_NAME=$(basename "$ARTIFACT_PATH")" >> "$GITHUB_ENV"
+      - name: Package offline plugin
+        run: |
+          chmod +x ./dify-plugin-linux-amd64
+          ./dify-plugin-linux-amd64 plugin package \
+            plugin-src \
+            -o "${{ env.PLUGIN_AUTHOR }}-${{ env.PLUGIN_NAME }}_${{ env.PLUGIN_VERSION }}-${{ env.PACKAGE_SUFFIX }}.difypkg" \
+            --max-size 5120
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ARTIFACT_NAME }}
-          path: ${{ env.ARTIFACT_PATH }}
+          name: ${{ env.PLUGIN_AUTHOR }}-${{ env.PLUGIN_NAME }}_${{ env.PLUGIN_VERSION }}-${{ env.PACKAGE_SUFFIX }}.difypkg
+          path: ${{ env.PLUGIN_AUTHOR }}-${{ env.PLUGIN_NAME }}_${{ env.PLUGIN_VERSION }}-${{ env.PACKAGE_SUFFIX }}.difypkg
