@@ -11,7 +11,7 @@ on:
       plugin_version:
         description: "OpenAI plugin version"
         required: true
-        default: "0.2.10"
+        default: "0.3.3"
         type: string
       platform_arm:
         description: "Use ARM platform (true = manylinux_2_17_aarch64, false = manylinux_2_17_x86_64)"
@@ -34,7 +34,7 @@ jobs:
         run: |
           PLUGIN_VERSION="${{ github.event.inputs.plugin_version }}"
           if [ -z "$PLUGIN_VERSION" ]; then
-            PLUGIN_VERSION="0.2.10"
+            PLUGIN_VERSION="0.3.3"
           fi
 
           PLATFORM_ARM="${{ github.event.inputs.platform_arm }}"
