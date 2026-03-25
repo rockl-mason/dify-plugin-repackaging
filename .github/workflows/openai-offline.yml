@@ -1,0 +1,100 @@
+name: Repackage OpenAI Plugin
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/openai-offline.yml
+  workflow_dispatch:
+    inputs:
+      plugin_version:
+        description: "OpenAI plugin version"
+        required: true
+        default: "0.2.10"
+        type: string
+      platform_arm:
+        description: "Use ARM platform (true = manylinux_2_17_aarch64, false = manylinux_2_17_x86_64)"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+env:
+  PLUGIN_AUTHOR: langgenius
+  PLUGIN_NAME: openai
+
+jobs:
+  repackage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve inputs
+        run: |
+          PLUGIN_VERSION="${{ github.event.inputs.plugin_version }}"
+          if [ -z "$PLUGIN_VERSION" ]; then
+            PLUGIN_VERSION="0.2.10"
+          fi
+
+          PLATFORM_ARM="${{ github.event.inputs.platform_arm }}"
+          if [ -z "$PLATFORM_ARM" ]; then
+            PLATFORM_ARM="false"
+          fi
+
+          echo "PLUGIN_VERSION=$PLUGIN_VERSION" >> "$GITHUB_ENV"
+          echo "PLATFORM_ARM=$PLATFORM_ARM" >> "$GITHUB_ENV"
+
+          if [ "$PLATFORM_ARM" = "true" ]; then
+            echo "PIP_PLATFORM=manylinux_2_17_aarch64" >> "$GITHUB_ENV"
+            echo "PACKAGE_SUFFIX=openai-offline-arm64" >> "$GITHUB_ENV"
+          else
+            echo "PIP_PLATFORM=manylinux_2_17_x86_64" >> "$GITHUB_ENV"
+            echo "PACKAGE_SUFFIX=openai-offline-x86_64" >> "$GITHUB_ENV"
+          fi
+
+      - name: Print workflow inputs
+        run: |
+          echo "plugin_author  = ${{ env.PLUGIN_AUTHOR }}"
+          echo "plugin_name    = ${{ env.PLUGIN_NAME }}"
+          echo "plugin_version = ${{ env.PLUGIN_VERSION }}"
+          echo "platform_arm   = ${{ env.PLATFORM_ARM }}"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Make plugin_repackaging.sh executable
+        run: chmod +x ./plugin_repackaging.sh
+
+      - name: Run plugin repackaging script
+        run: |
+          PIP_MIRROR_URL=https://pypi.org/simple \
+          ./plugin_repackaging.sh \
+          -p ${{ env.PIP_PLATFORM }} \
+          -s ${{ env.PACKAGE_SUFFIX }} \
+          market \
+          "${{ env.PLUGIN_AUTHOR }}" \
+          "${{ env.PLUGIN_NAME }}" \
+          "${{ env.PLUGIN_VERSION }}"
+
+      - name: Find repackaged artifact
+        run: |
+          ARTIFACT_PATH=$(find . -type f -name "*-${PACKAGE_SUFFIX}.difypkg" | head -n 1)
+          if [ -z "$ARTIFACT_PATH" ]; then
+            echo "No *-${PACKAGE_SUFFIX}.difypkg artifact found!"
+            exit 1
+          fi
+
+          echo "ARTIFACT_PATH=$ARTIFACT_PATH" >> "$GITHUB_ENV"
+          echo "ARTIFACT_NAME=$(basename "$ARTIFACT_PATH")" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.ARTIFACT_PATH }}
