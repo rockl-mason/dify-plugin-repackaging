@@ -1,18 +1,18 @@
-name: Repackage OpenAI Plugin
+name: Repackage OpenAI API Compatible Plugin
 
 on:
   push:
     branches:
       - main
     paths:
-      - .github/workflows/openai-offline.yml
+      - .github/workflows/openai-api-compatible-offline.yml
       - scripts/package_plugin_offline.sh
   workflow_dispatch:
     inputs:
       plugin_version:
-        description: "OpenAI plugin version"
+        description: "OpenAI API Compatible plugin version"
         required: true
-        default: "0.3.3"
+        default: "0.0.41"
         type: string
       platform_arm:
         description: "Use ARM platform (true = manylinux_2_17_aarch64, false = manylinux_2_17_x86_64)"
@@ -28,7 +28,7 @@ permissions:
 
 env:
   PLUGIN_AUTHOR: langgenius
-  PLUGIN_NAME: openai
+  PLUGIN_NAME: openai_api_compatible
   MARKETPLACE_API_URL: https://marketplace.dify.ai
 
 jobs:
@@ -39,7 +39,7 @@ jobs:
         run: |
           PLUGIN_VERSION="${{ github.event.inputs.plugin_version }}"
           if [ -z "$PLUGIN_VERSION" ]; then
-            PLUGIN_VERSION="0.3.3"
+            PLUGIN_VERSION="0.0.41"
           fi
 
           PLATFORM_ARM="${{ github.event.inputs.platform_arm }}"
